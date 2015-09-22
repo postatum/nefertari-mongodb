@@ -18,6 +18,7 @@ from .fields import (
     BigIntegerField, SmallIntegerField, IntervalField, DateField,
     TimeField, BaseFieldMixin
 )
+from .utils import relationship_fields
 
 
 log = logging.getLogger(__name__)
@@ -103,29 +104,23 @@ class BaseMixin(object):
             included documents. If reference/relationship field is not
             present in this list, this field's value in JSON will be an
             object's ID or list of IDs.
-        _nesting_depth: Depth of relationship field nesting in JSON.
-            Defaults to 1(one) which makes only one level of relationship
-            nested.
     """
     _public_fields = None
     _auth_fields = None
     _nested_relationships = ()
     _backref_hooks = ()
-    _nesting_depth = 1
 
     _type = property(lambda self: self.__class__.__name__)
     Q = mongo.Q
 
     @classmethod
-    def get_es_mapping(cls, _depth=None, types_map=None):
+    def get_es_mapping(cls, types_map=None, _ancestors=None):
         """ Generate ES mapping from model schema. """
         from nefertari.elasticsearch import ES
+        if _ancestors is None:
+            _ancestors = ()
         if types_map is None:
             types_map = TYPES_MAP
-        if _depth is None:
-            _depth = cls._nesting_depth
-        depth_reached = _depth <= 0
-
         properties = {}
         mapping = {
             ES.src2type(cls.__name__): {
@@ -136,11 +131,15 @@ class BaseMixin(object):
         for name, field in fields.items():
             if isinstance(field, RelationshipField):
                 field = field.field
-            if isinstance(field, (ReferenceField, RelationshipField)):
-                if name in cls._nested_relationships and not depth_reached:
+            if isinstance(field, relationship_fields):
+                model_cls = field.document_type
+                should_be_nested = (
+                    name in cls._nested_relationships and
+                    model_cls.__name__ not in _ancestors)
+                if should_be_nested:
                     field_mapping = {'type': 'nested'}
-                    submapping = field.document_type.get_es_mapping(
-                        _depth=_depth-1)
+                    submapping = model_cls.get_es_mapping(
+                        _ancestors=_ancestors+(cls.__name__,))
                     field_mapping.update(list(submapping.values())[0])
                 else:
                     field_mapping = types_map[
@@ -467,10 +466,7 @@ class BaseMixin(object):
         return null_values
 
     def to_dict(self, **kwargs):
-        _depth = kwargs.get('_depth')
-        if _depth is None:
-            _depth = self._nesting_depth
-        depth_reached = _depth is not None and _depth <= 0
+        _ancestors = kwargs.get('_ancestors') or ()
 
         _data = dictset()
         for field, field_type in self._fields.items():
@@ -479,19 +475,29 @@ class BaseMixin(object):
                 continue
             value = getattr(self, field, None)
 
-            if value is not None:
+            if value is None:
+                _data[field] = value
+                continue
+
+            if isinstance(field_type, relationship_fields):
+                same_ancestor = False
+                if value:
+                    obj = (value if isinstance(field_type, ReferenceField)
+                           else value[0])
+                    same_ancestor = obj._type in _ancestors
                 include = field in self._nested_relationships
-                if not include or depth_reached:
+                if not include or same_ancestor:
                     encoder = lambda v: getattr(v, v.pk_field(), None)
                 else:
-                    encoder = lambda v: v.to_dict(_depth=_depth-1)
+                    encoder = lambda v: v.to_dict(
+                        _ancestors=_ancestors + (self._type,))
 
-                if isinstance(field_type, ReferenceField):
-                    value = encoder(value)
-                elif isinstance(field_type, RelationshipField):
-                    value = [encoder(val) for val in value]
-                elif hasattr(value, 'to_dict'):
-                    value = value.to_dict(_depth=_depth-1)
+            if isinstance(field_type, ReferenceField):
+                value = encoder(value)
+            elif isinstance(field_type, RelationshipField):
+                value = [encoder(val) for val in value]
+            elif hasattr(value, 'to_dict'):
+                value = value.to_dict()
 
             _data[field] = value
         _data['_type'] = self._type
@@ -509,11 +515,11 @@ class BaseMixin(object):
             results only contain data for models on which current model
             and field are nested.
         """
-        relationship_fields = {
+        rel_fields = {
             name: field for name, field in self._fields.items()
-            if isinstance(field, (ReferenceField, RelationshipField))}
+            if isinstance(field, relationship_fields)}
 
-        for name, field in relationship_fields.items():
+        for name, field in rel_fields.items():
             value = getattr(self, name)
             if not value:
                 continue

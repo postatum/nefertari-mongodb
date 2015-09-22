@@ -82,8 +82,13 @@ class TestBaseMixin(object):
                 document='MyModel', backref_name='parent',
                 uselist=False, backref_uselist=False)
 
-        mymodel_mapping = MyModel.get_es_mapping()
-        assert mymodel_mapping == {
+        model1_mapping = MyModel.get_es_mapping()
+        model2_mapping = MyModel2.get_es_mapping()
+        model1_properties = model1_mapping['MyModel']['properties'].copy()
+        model2_properties = model2_mapping['MyModel2']['properties'].copy()
+
+        model2_properties['child'] = {'type': 'string'}
+        assert model1_mapping == {
             'MyModel': {
                 'properties': {
                     '_pk': {'type': 'string'},
@@ -91,15 +96,17 @@ class TestBaseMixin(object):
                     'groups': {'type': 'long'},
                     'my_id': {'type': 'string'},
                     'name': {'type': 'string'},
-                    'parent': {'type': 'string'},
+                    'parent': {
+                        'type': 'nested',
+                        'properties': model2_properties
+                    },
                     'status': {'type': 'string'},
                 }
             }
         }
 
-        mymodel2_mapping = MyModel2.get_es_mapping()
-        child_props = mymodel_mapping['MyModel']['properties']
-        assert mymodel2_mapping == {
+        model1_properties['parent'] = {'type': 'string'}
+        assert model2_mapping == {
             'MyModel2': {
                 'properties': {
                     '_pk': {'type': 'string'},
@@ -107,7 +114,7 @@ class TestBaseMixin(object):
                     'name': {'type': 'string'},
                     'child': {
                         'type': 'nested',
-                        'properties': child_props
+                        'properties': model1_properties
                     },
                 }
             }
