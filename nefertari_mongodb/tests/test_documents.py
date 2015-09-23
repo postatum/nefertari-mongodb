@@ -68,7 +68,7 @@ class TestBaseMixin(object):
     def test_get_es_mapping(self, mock_conv):
         class MyModel(docs.BaseDocument):
             _nested_relationships = ['parent']
-            _nesting_depth = 0
+            _nesting_redundancy = 1
             my_id = fields.IdField()
             name = fields.StringField(primary_key=True)
             status = fields.ChoiceField(choices=['active'])
@@ -76,7 +76,7 @@ class TestBaseMixin(object):
 
         class MyModel2(docs.BaseDocument):
             _nested_relationships = ['child']
-            _nesting_depth = 1
+            _nesting_redundancy = 0
             name = fields.StringField(primary_key=True)
             child = fields.Relationship(
                 document='MyModel', backref_name='parent',
@@ -85,9 +85,7 @@ class TestBaseMixin(object):
         model1_mapping = MyModel.get_es_mapping()
         model2_mapping = MyModel2.get_es_mapping()
         model1_properties = model1_mapping['MyModel']['properties'].copy()
-        model2_properties = model2_mapping['MyModel2']['properties'].copy()
 
-        model2_properties['child'] = {'type': 'string'}
         assert model1_mapping == {
             'MyModel': {
                 'properties': {
@@ -96,10 +94,7 @@ class TestBaseMixin(object):
                     'groups': {'type': 'long'},
                     'my_id': {'type': 'string'},
                     'name': {'type': 'string'},
-                    'parent': {
-                        'type': 'nested',
-                        'properties': model2_properties
-                    },
+                    'parent': {'type': 'string'},
                     'status': {'type': 'string'},
                 }
             }
@@ -261,7 +256,7 @@ class TestBaseDocument(object):
         class MyModel1(docs.BaseDocument):
             id = fields.IdField()
             name = fields.StringField(primary_key=True)
-
+            _nesting_redundancy = 100
         obj = MyModel1(name='foo')
         assert obj.to_dict() == {
             '_pk': 'foo',
@@ -270,3 +265,45 @@ class TestBaseDocument(object):
             'id': 'foo',
             'name': 'foo',
         }
+
+    def test_to_dict_nesting(self):
+        class MyModelA(docs.BaseDocument):
+            __tablename__ = 'mymodel'
+            _nested_relationships = ['parent']
+
+        class MyModelB(docs.BaseDocument):
+            _nested_relationships = ['myself']
+            __tablename__ = 'mymodel2'
+            myself = fields.Relationship(
+                document='MyModelA', backref_name='parent',
+                uselist=False, backref_uselist=False)
+            child_id = fields.ForeignKeyField(
+                ref_document='MyModelA', ref_column='mymodel.id',
+                ref_column_type=fields.IdField)
+
+        myobj1 = MyModelA()
+        myobj1.id = 1
+        myobj2 = MyModelB(myself=myobj1)
+        myobj1.parent = myobj2
+        myobj2.id = 2
+        assert myobj1.to_dict() == {
+            '_pk': '1',
+            '_type': 'MyModelA',
+            '_version': 0,
+            'id': 1,
+            'parent': {'_pk': '2',
+                       '_type': 'MyModelB',
+                       '_version': 0,
+                       'id': 2,
+                       'myself': 1}}
+
+        assert myobj2.to_dict() == {
+            '_pk': '2',
+            '_type': 'MyModelB',
+            '_version': 0,
+            'id': 2,
+            'myself': {'_pk': '1',
+                       '_type': 'MyModelA',
+                       '_version': 0,
+                       'id': 1,
+                       'parent': 2}}
