@@ -86,7 +86,6 @@ class TestBaseMixin(object):
             'MyModel': {
                 'properties': {
                     '_pk': {'type': 'string'},
-                    '_version': {'type': 'long'},
                     'groups': {'type': 'long'},
                     'name': {'type': 'string'},
                     'parent': {'type': 'string'},
@@ -101,7 +100,6 @@ class TestBaseMixin(object):
             'MyModel2': {
                 'properties': {
                     '_pk': {'type': 'string'},
-                    '_version': {'type': 'long'},
                     'name': {'type': 'string'},
                     'child': {
                         'type': 'nested',
@@ -127,12 +125,12 @@ class TestBaseMixin(object):
 
         dep_fields = Department._get_fields_creators()
         assert set(dep_fields.keys()) == {
-            'id', '_version', 'company_id'}
+            'id', 'company_id'}
         assert dep_fields['id'] is fields.IdField
         assert dep_fields['company_id'] is fields.ForeignKeyField
 
         parent_fields = Company._get_fields_creators()
-        assert set(parent_fields.keys()) == {'id', '_version', 'departments'}
+        assert set(parent_fields.keys()) == {'id', 'departments'}
         assert parent_fields['id'] is fields.IdField
         assert parent_fields['departments'] is fields.Relationship
 
@@ -293,7 +291,6 @@ class TestBaseDocument(object):
         assert obj.to_dict() == {
             '_pk': 'foo',
             '_type': 'MyModel1',
-            '_version': 0,
             'id': 'foo',
             'name': 'foo',
         }
