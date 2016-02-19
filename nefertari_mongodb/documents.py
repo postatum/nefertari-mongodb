@@ -463,10 +463,6 @@ class BaseMixin(object):
 
         pk_field = self.pk_field()
         parts.append('{}={}'.format(pk_field, getattr(self, pk_field)))
-
-        if hasattr(self, '_version'):
-            parts.append('v=%s' % self._version)
-
         return '<%s>' % ', '.join(parts)
 
     @classmethod
@@ -480,7 +476,7 @@ class BaseMixin(object):
     @classmethod
     def get_null_values(cls):
         """ Get null values of :cls: fields. """
-        skip_fields = {'_version', '_acl'}
+        skip_fields = set(['_acl'])
         null_values = {}
         for name in cls._fields.keys():
             if name in skip_fields:
@@ -688,8 +684,6 @@ class BaseMixin(object):
 class BaseDocument(six.with_metaclass(
         DocumentMetaclass,
         MultiEngineDocMixin, BaseMixin, mongo.Document)):
-    _version = IntegerField(default=0)
-
     meta = {
         'abstract': True,
     }
@@ -724,10 +718,6 @@ class BaseDocument(six.with_metaclass(
                       if key in valid_fields}
         super(BaseDocument, self).__init__(*args, **values)
 
-    def _bump_version(self):
-        if self._is_modified():
-            self._version += 1
-
     def save(self, request=None, *arg, **kw):
         """
         Force insert document in creation so that unique constraits are
@@ -737,7 +727,6 @@ class BaseDocument(six.with_metaclass(
         """
         kw['force_insert'] = self._created
         self._request = request
-        self._bump_version()
         try:
             super(BaseDocument, self).save(*arg, **kw)
         except (mongo.NotUniqueError, mongo.OperationError) as e:
