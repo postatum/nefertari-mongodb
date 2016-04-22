@@ -140,7 +140,10 @@ class BaseMixin(object):
                 field = field.field
             if isinstance(field, (ReferenceField, RelationshipField)):
                 if name in cls._nested_relationships and not depth_reached:
-                    field_mapping = {'type': 'nested'}
+                    type_name = (
+                        'nested' if isinstance(field, RelationshipField) else
+                        'object')
+                    field_mapping = {'type': type_name}
                     submapping = field.document_type.get_es_mapping(
                         _depth=_depth-1)
                     field_mapping.update(list(submapping.values())[0])

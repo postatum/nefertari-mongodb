@@ -104,7 +104,7 @@ class TestBaseMixin(object):
                     '_pk': {'type': 'string'},
                     'name': {'type': 'string'},
                     'child': {
-                        'type': 'nested',
+                        'type': 'object',
                         'properties': child_props
                     },
                 }
